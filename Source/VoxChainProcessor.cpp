@@ -1,14 +1,19 @@
 // VoxChainProcessor.cpp — Нативный VST3 для Ableton Live (JUCE 8)
-// Активный пресет: Billie Eilish — Whisper Close
-// Zero Latency Mode: HQ STUDIO
+// Активный пресет: Travis Scott — Utopia / Rodeo Chain
+// Zero Latency Mode: ENABLED (0 samples)
 // Собранная цепочка модулей:
-//  1. NOISE RED (ON)
-//  2. PRO-Q (ON)
-//  3. LA-2A (ON)
-//  4. AIR (ON)
-//  5. DOUBLER (ON)
-//  6. GHOST REV (ON)
+//  1. TUNE (ON)
+//  2. NOISE RED (ON)
+//  3. PRO-Q (ON)
+//  4. DE-ESSER (ON)
+//  5. FET COMP (ON)
+//  6. CL 1B (ON)
+//  7. TAPE (ON)
+//  8. 201 ECHO (ON)
+//  9. GHOST REV (ON)
+//  10. LIMITER (ON)
 
+#include <cmath>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 
@@ -23,20 +28,22 @@ public:
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout() {
         std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
-        p.push_back(std::make_unique<juce::AudioParameterBool>("zeroLatency", "Zero Latency", false));
-        p.push_back(std::make_unique<juce::AudioParameterFloat>("inGain", "Input dB", -18.0f, 18.0f, 0f));
-        p.push_back(std::make_unique<juce::AudioParameterFloat>("outGain", "Output dB", -18.0f, 18.0f, 0f));
-        p.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Global Mix", 0.0f, 1.0f, 1.00f));
-        p.push_back(std::make_unique<juce::AudioParameterFloat>("hpf", "Pro-Q LowCut", 20.0f, 250.0f, 95.0f));
-        p.push_back(std::make_unique<juce::AudioParameterFloat>("compThr", "Dynamics Thr", -40.0f, 0.0f, -20.0f));
-        p.push_back(std::make_unique<juce::AudioParameterFloat>("drive", "Tape/Heat Drive", 0.0f, 100.0f, 32.0f));
-        p.push_back(std::make_unique<juce::AudioParameterFloat>("reverb", "Lumen/Ghost Mix", 0.0f, 1.0f, 0.25f));
+        p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"zeroLatency", 1}, "Zero Latency", true));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"inGain", 1}, "Input dB", -18.0f, 18.0f, 0.0f));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"outGain", 1}, "Output dB", -18.0f, 18.0f, 0.0f));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"mix", 1}, "Global Mix", 0.0f, 1.0f, 1.00f));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"hpf", 1}, "Pro-Q LowCut", 20.0f, 250.0f, 95.0f));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compThr", 1}, "Dynamics Thr", -40.0f, 0.0f, -20.0f));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"drive", 1}, "Tape/Heat Drive", 0.0f, 100.0f, 32.0f));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"reverb", 1}, "Lumen/Ghost Mix", 0.0f, 1.0f, 0.25f));
         return { p.begin(), p.end() };
     }
 
     void prepareToPlay(double sr, int blockSize) override {
         juce::dsp::ProcessSpec spec { sr, (juce::uint32)blockSize, 2 };
-        hpf.prepare(spec); comp.prepare(spec); reverb.prepare(spec);
+        hpf.prepare(spec);
+        comp.prepare(spec);
+        reverb.prepare(spec);
         updateLatency();
     }
 
@@ -48,7 +55,19 @@ public:
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
         updateLatency();
-        auto sr = getSampleRate();
+
+        const double sr = getSampleRate();
+        if (sr <= 0.0) return;
+
+        const float inLinear = juce::Decibels::decibelsToGain(apvts.getRawParameterValue("inGain")->load());
+        const float outLinear = juce::Decibels::decibelsToGain(apvts.getRawParameterValue("outGain")->load());
+        const float mix = apvts.getRawParameterValue("mix")->load();
+
+        buffer.applyGain(inLinear);
+
+        juce::AudioBuffer<float> dryBuffer;
+        dryBuffer.makeCopyOf(buffer);
+
         *hpf.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, apvts.getRawParameterValue("hpf")->load());
         comp.setThreshold(apvts.getRawParameterValue("compThr")->load());
         comp.setRatio(4.5f);
@@ -60,18 +79,27 @@ public:
         hpf.process(ctx);
         comp.process(ctx);
 
-        float drv = 1.0f + (apvts.getRawParameterValue("drive")->load() / 100.0f) * 8.0f;
+        const float drv = 1.0f + (apvts.getRawParameterValue("drive")->load() / 100.0f) * 8.0f;
+        const float norm = std::tanh(drv);
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch) {
             auto* d = buffer.getWritePointer(ch);
             for (int i = 0; i < buffer.getNumSamples(); ++i)
-                d[i] = std::tanh(d[i] * drv) / std::tanh(drv);
+                d[i] = std::tanh(d[i] * drv) / norm;
         }
 
         juce::dsp::Reverb::Parameters rp;
         rp.wetLevel = apvts.getRawParameterValue("reverb")->load() * 0.5f;
-        rp.dryLevel = 1.0f; rp.roomSize = 0.7f;
+        rp.dryLevel = 1.0f;
+        rp.roomSize = 0.7f;
         reverb.setParameters(rp);
         reverb.process(ctx);
+
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch) {
+            auto* wet = buffer.getWritePointer(ch);
+            const auto* dry = dryBuffer.getReadPointer(ch);
+            for (int i = 0; i < buffer.getNumSamples(); ++i)
+                wet[i] = (dry[i] * (1.0f - mix) + wet[i] * mix) * outLinear;
+        }
     }
 
     const juce::String getName() const override { return "VoxChain Pro"; }
@@ -81,7 +109,7 @@ public:
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram(int) override {}
-    const juce::String getProgramName(int) override { return "Billie Eilish — Whisper Close"; }
+    const juce::String getProgramName(int) override { return juce::String::fromUTF8("Travis Scott — Utopia / Rodeo Chain"); }
     void changeProgramName(int, const juce::String&) override {}
     bool hasEditor() const override { return true; }
     juce::AudioProcessorEditor* createEditor() override { return new juce::GenericAudioProcessorEditor(*this); }
