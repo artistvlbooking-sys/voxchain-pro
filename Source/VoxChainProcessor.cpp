@@ -749,30 +749,34 @@ struct ModuleCard : public juce::Component {
         g.drawRoundedRectangle(b, 16.0f, 1.5f);
 
         // Dark OLED Screen
-        auto oled = b.reduced(10.0f).removeFromTop(62.0f).translated(0.0f, 24.0f);
+        auto oled = b.reduced(10.0f).withTrimmedTop(24.0f).removeFromTop(62.0f);
         g.setColour(juce::Colour(0xff111318));
         g.fillRoundedRectangle(oled, 10.0f);
         g.setColour(juce::Colour(0xff2a2f3a));
         g.drawRoundedRectangle(oled, 10.0f, 1.5f);
 
+        auto oledInner = oled.reduced(8.0f, 5.0f);
+        auto topRow = oledInner.removeFromTop(16.0f);
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));
-        g.drawText(title, oled.reduced(8, 5).removeFromTop(16), juce::Justification::left);
+        g.drawText(title, topRow, juce::Justification::left);
 
         g.setColour(juce::Colour(0xff8b95a5));
         g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-        g.drawText(category, oled.reduced(8, 5).removeFromTop(16), juce::Justification::right);
+        g.drawText(category, topRow, juce::Justification::right);
 
+        oledInner.removeFromTop(2.0f);
+        auto midRow = oledInner.removeFromTop(20.0f);
         g.setColour(isBypassed ? juce::Colour(0xff64748b) : accentCol);
         g.setFont(juce::Font(juce::FontOptions(16.0f, juce::Font::bold)));
-        g.drawText(isBypassed ? "OFF" : liveMain, oled.reduced(8, 22).removeFromTop(20), juce::Justification::left);
+        g.drawText(isBypassed ? "OFF" : liveMain, midRow, juce::Justification::left);
 
         g.setColour(juce::Colour(0xff94a3b8));
         g.setFont(juce::Font(juce::FontOptions(9.5f)));
-        g.drawText(isBypassed ? "BYPASSED" : liveSub, oled.reduced(8, 24).removeFromTop(18), juce::Justification::right);
+        g.drawText(isBypassed ? "BYPASSED" : liveSub, midRow, juce::Justification::right);
 
         // OLED Meter bar
-        auto bar = oled.reduced(8, 6).removeFromBottom(4.0f);
+        auto bar = oledInner.removeFromBottom(4.0f);
         g.setColour(juce::Colour(0xff232834));
         g.fillRoundedRectangle(bar, 2.0f);
         if (!isBypassed && meterPct > 0.01f) {
@@ -820,7 +824,6 @@ class VoxChainProEditor : public juce::AudioProcessorEditor, private juce::Timer
 public:
     explicit VoxChainProEditor(VoxChainProProcessor& p) : AudioProcessorEditor(&p), proc(p) {
         setLookAndFeel(&lnf);
-        setSize(1120, 680);
 
         // Top Bar Controls
         for (size_t i = 0; i < kArtistPresets.size(); ++i)
@@ -932,6 +935,10 @@ public:
         setupFader(inFader, "inGain", inAtt);
         setupFader(outFader, "outGain", outAtt);
 
+        // Set size LAST so resized() lays out all 8 cards and master controls properly
+        setSize(1120, 680);
+        resized();
+        timerCallback();
         startTimerHz(25);
     }
 
@@ -961,12 +968,13 @@ public:
         g.setFont(juce::Font(juce::FontOptions(22.0f, juce::Font::bold)));
         g.drawText(juce::String(proc.currentPresetIdx + 1).paddedLeft('0', 2), brandOled.reduced(12, 0).removeFromLeft(36), juce::Justification::centredLeft);
 
+        auto brandTextRect = brandOled.withTrimmedLeft(54.0f).reduced(4.0f, 6.0f);
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-        g.drawText("VOXCHAIN PRO", brandOled.reduced(56, 6).removeFromTop(18), juce::Justification::left);
+        g.drawText("VOXCHAIN PRO", brandTextRect.removeFromTop(17.0f), juce::Justification::left);
         g.setColour(juce::Colour(0xff8b95a5));
         g.setFont(juce::Font(juce::FontOptions(9.5f)));
-        g.drawText("HARDWARE VOCAL RACK · VST3", brandOled.reduced(56, 24).removeFromTop(14), juce::Justification::left);
+        g.drawText("HARDWARE VOCAL RACK - VST3", brandTextRect, juce::Justification::left);
 
         // Right Master Panel
         auto masterArea = getLocalBounds().removeFromRight(180).withTrimmedTop(66);
@@ -1033,7 +1041,7 @@ private:
         auto val = [&](const char* id) { return proc.apvts.getRawParameterValue(id)->load(); };
 
         bool zl = val("zeroLatency") > 0.5f;
-        zlBtn.setButtonText(zl ? "ZERO LATENCY · 0.0 MS" : "HQ STUDIO · 5.8 MS");
+        zlBtn.setButtonText(zl ? "ZERO LATENCY - 0.0 MS" : "HQ STUDIO - 5.8 MS");
 
         vuInSmooth = vuInSmooth * 0.72f + proc.meterInPeak.load(std::memory_order_relaxed) * 0.28f;
         vuOutSmooth = vuOutSmooth * 0.72f + proc.meterOutPeak.load(std::memory_order_relaxed) * 0.28f;
@@ -1098,7 +1106,7 @@ private:
     VoxChainProProcessor& proc;
     HardwareLookAndFeel lnf;
     juce::ComboBox presetBox;
-    juce::TextButton zlBtn{"ZERO LATENCY · 0.0 MS"}, bypassBtn{"BYPASS"};
+    juce::TextButton zlBtn{"ZERO LATENCY - 0.0 MS"}, bypassBtn{"BYPASS"};
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> zlAtt, bypassAtt;
     std::vector<std::unique_ptr<ModuleCard>> cards;
     juce::Slider mixKnob, inFader, outFader;
