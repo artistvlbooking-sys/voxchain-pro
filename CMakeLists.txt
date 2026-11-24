@@ -38,3 +38,7 @@ target_link_libraries(VoxChainPro PRIVATE
   juce::juce_recommended_lto_flags
   juce::juce_recommended_warning_flags
 )
+
+if(MSVC)
+  target_compile_options(VoxChainPro PRIVATE /utf-8)
+endif())
