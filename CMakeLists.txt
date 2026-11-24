@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
 project(VoxChainPro VERSION 2.0.0)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 include(FetchContent)
 FetchContent_Declare(
     JUCE
@@ -14,10 +17,10 @@ juce_add_plugin(VoxChainPro
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    COPY_PLUGIN_AFTER_BUILD FALSE
     PLUGIN_MANUFACTURER_CODE VchA
     PLUGIN_CODE Vcp2
-    FORMATS VST3 AU Standalone
+    FORMATS VST3 Standalone
     PRODUCT_NAME "VoxChain Pro Modular"
 )
 
