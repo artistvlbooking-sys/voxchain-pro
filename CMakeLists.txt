@@ -41,4 +41,4 @@ target_link_libraries(VoxChainPro PRIVATE
 
 if(MSVC)
   target_compile_options(VoxChainPro PRIVATE /utf-8)
-endif())
+endif()
